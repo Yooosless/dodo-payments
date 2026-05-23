@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: dodo_postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: supersecretpassword
+      POSTGRES_DB: dodo
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+
+  migration-runner:
+    image: dodo-payments-app
+    build: .
+    container_name: dodo_migration_runner
+    environment:
+      DATABASE_URL: postgres://postgres:supersecretpassword@db:5432/dodo
+    entrypoint: ["sqlx", "database", "setup", "--source", "/app/migrations"]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  app:
+    image: dodo-payments-app
+    build: .
+    container_name: dodo_payments_api
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgres://postgres:supersecretpassword@db:5432/dodo
+      RUST_LOG: info
+    depends_on:
+      db:
+        condition: service_healthy
+      migration-runner:
+        condition: service_completed_successfully
+
+volumes:
+  postgres_data:

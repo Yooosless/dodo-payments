@@ -1,0 +1,335 @@
+openapi: 3.0.3
+info:
+  title: Dodo Payments Backend Engine API
+  version: 1.0.0
+  description: High-performance, multi-tenant billing and payment aggregation engine.
+servers:
+  - url: http://localhost:3000/api/v1
+    description: Local Development Environment
+
+paths:
+  /businesses:
+    post:
+      summary: Register a Merchant Business
+      description: Provisions a new tenant profile and generates unique cryptographic secrets.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - webhook_url
+              properties:
+                name:
+                  type: string
+                  example: "Acme Corp"
+                webhook_url:
+                  type: string
+                  format: uri
+                  example: "https://api.acme.com/callbacks"
+      responses:
+        "201":
+          description: Business registered successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  api_key:
+                    type: string
+                    description: Plaintext API key shown only once. Formatted as dodo_live_[bytes].
+                  webhook_secret:
+                    type: string
+                    description: Symmetric signing key used for outbound event verification.
+                example:
+                  id: "e0433290-7f28-44cb-b80c-03dc8ef6f212"
+                  name: "Acme Corp"
+                  api_key: "dodo_live_b3BlbnNzaC1rZXktdjEAAAAG"
+                  webhook_secret: "whsec_7d5c7b3b72c23d40"
+        "400":
+          $ref: '#/components/responses/400BadRequest'
+
+  /customers:
+    post:
+      summary: Create a Customer Profile
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+              properties:
+                name:
+                  type: string
+                  example: "Afridi Shaik"
+                email:
+                  type: string
+                  format: email
+                  example: "afridi@example.com"
+      responses:
+        "201":
+          description: Customer profile created.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    format: uuid
+                  business_id:
+                    type: string
+                    format: uuid
+                  name:
+                    type: string
+                  email:
+                    type: string
+                example:
+                  id: "5df240be-7e3b-4680-bc90-f6d338f01cf2"
+                  business_id: "e0433290-7f28-44cb-b80c-03dc8ef6f212"
+                  name: "Afridi Shaik"
+                  email: "afridi@example.com"
+        "401":
+          $ref: '#/components/responses/401Unauthorized'
+
+  /invoices:
+    post:
+      summary: Generate a Draft Invoice
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - customer_id
+                - total_amount_cents
+                - due_date
+              properties:
+                customer_id:
+                  type: string
+                  format: uuid
+                  example: "5df240be-7e3b-4680-bc90-f6d338f01cf2"
+                total_amount_cents:
+                  type: integer
+                  format: int64
+                  description: Amount in minor currency integer units (e.g., 1550 = $15.50).
+                  example: 1550
+                due_date:
+                  type: string
+                  format: date-time
+                  example: "2026-12-31T23:59:59Z"
+      responses:
+        "201":
+          description: Draft invoice generated successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        "401":
+          $ref: '#/components/responses/401Unauthorized'
+
+  /invoices/{id}:
+    get:
+      summary: Fetch Invoice Details
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Invoice record retrieved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Invoice'
+        "404":
+          $ref: '#/components/responses/404NotFound'
+
+  /invoices/{id}/pay:
+    post:
+      summary: Attempt Payment Execution
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+            example: "req_uniq_prod_01"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - card_token
+              properties:
+                card_token:
+                  type: string
+                  example: "tok_visa_success"
+      responses:
+        "200":
+          description: Payment successful, invoice transitioned to PAID.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "success"
+                  invoice_id:
+                    type: string
+                    format: uuid
+                  psp_reference:
+                    type: string
+                    format: uuid
+                example:
+                  status: "success"
+                  invoice_id: "c8e1219b-6b80-4ad3-9e4c-1d1136b81ef1"
+                  psp_reference: "42a39281-b541-4712-9ee1-88fc2139ba80"
+        "202":
+          description: Gateway timeout encountered. Processing asynchronously via polling.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: "processing"
+                  message:
+                    type: string
+                    example: "Gateway timeout reached. State is checking asynchronously."
+        "422":
+          description: Operational conflict (e.g., row-lock, duplicate charge attempt, or card declined).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    Invoice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        business_id:
+          type: string
+          format: uuid
+        customer_id:
+          type: string
+          format: uuid
+        state:
+          type: string
+          enum: [DRAFT, OPEN, PROCESSING, PAID, VOID, UNCOLLECTIBLE]
+        total_amount_cents:
+          type: integer
+          format: int64
+        due_date:
+          type: string
+          format: date-time
+      example:
+        id: "c8e1219b-6b80-4ad3-9e4c-1d1136b81ef1"
+        business_id: "e0433290-7f28-44cb-b80c-03dc8ef6f212"
+        customer_id: "5df240be-7e3b-4680-bc90-f6d338f01cf2"
+        state: "OPEN"
+        total_amount_cents: 1550
+        due_date: "2026-12-31T23:59:59Z"
+
+    ErrorResponse:
+      type: object
+      required:
+        - type
+        - code
+        - message
+        - timestamp
+      properties:
+        type:
+          type: string
+          description: High-level categorization classification.
+          example: "TRANSACTION_ERROR"
+        code:
+          type: string
+          description: Specific programmatic error identifier string.
+          example: "CARD_DECLINED"
+        message:
+          type: string
+          description: Clear human-readable problem explanation statement.
+          example: "The bank gateway rejected the charge due to insufficient funds."
+        timestamp:
+          type: string
+          format: date-time
+          example: "2026-05-24T03:56:15Z"
+
+  responses:
+    400BadRequest:
+      description: Invalid json input details or mismatched request body content signature.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            type: "VALIDATION_ERROR"
+            code: "BAD_REQUEST_BODY"
+            message: "The signature hash of the request body does not match the original idempotency registration."
+            timestamp: "2026-05-24T03:56:15Z"
+
+    401Unauthorized:
+      description: Missing or cryptographically invalid merchant auth credential header values.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            type: "AUTHENTICATION_ERROR"
+            code: "INVALID_API_KEY"
+            message: "The provided credential hash does not match any registered business record context."
+            timestamp: "2026-05-24T03:56:15Z"
+
+    404NotFound:
+      description: Targeted unique reference path could not be located inside database indexes.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+          example:
+            type: "RESOURCE_NOT_FOUND"
+            code: "INVOICE_NOT_FOUND"
+            message: "No active invoice records match the specified identifier hash parameter."
+            timestamp: "2026-05-24T03:56:15Z"
