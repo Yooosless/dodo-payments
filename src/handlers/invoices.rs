@@ -203,7 +203,7 @@ pub async fn create_invoice(
                     "total_amount_cents": inv_total,
                     "state": "DRAFT"
                 }),
-            );
+            ).await;
         }
     });
 

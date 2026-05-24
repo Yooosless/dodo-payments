@@ -380,35 +380,31 @@ pub async fn pay_invoice(
     .execute(&mut *post_tx)
     .await;
 
-    let db_pool = state.db.clone();
-
+   let db_pool = state.db.clone();
     let biz_id = business.id;
 
-    let webhook_event =
-        if final_invoice_state == "PAID" {
-            "invoice.paid".to_string()
-        } else {
-            "invoice.payment_failed".to_string()
-        };
+    let webhook_event = if final_invoice_state == "PAID" {
+        "invoice.paid".to_string()
+    } else {
+        "invoice.payment_failed".to_string()
+    };
 
     let webhook_data = json!({
         "invoice_id": invoice_id,
         "state": final_invoice_state,
-        "amount_cents":
-            target_invoice.total_amount_cents,
+        "amount_cents": target_invoice.total_amount_cents,
         "psp_reference": psp_ref
     });
 
     tokio::spawn(async move {
-        let biz_lookup =
-            sqlx::query_as::<_, WebhookConfigRow>(
-                "SELECT webhook_url, webhook_secret
-                 FROM businesses
-                 WHERE id = $1",
-            )
-            .bind(biz_id)
-            .fetch_optional(&db_pool)
-            .await;
+        let biz_lookup = sqlx::query_as::<_, WebhookConfigRow>(
+            "SELECT webhook_url, webhook_secret 
+             FROM businesses 
+             WHERE id = $1",
+        )
+        .bind(biz_id)
+        .fetch_optional(&db_pool)
+        .await;
 
         if let Ok(Some(row)) = biz_lookup {
             crate::services::webhook::dispatch_webhook(
@@ -416,17 +412,14 @@ pub async fn pay_invoice(
                 row.webhook_secret,
                 webhook_event,
                 webhook_data,
-            );
+            )
+            .await;
         }
     });
 
     let _ = post_tx.commit().await;
 
-    (
-        api_status,
-        Json(response_payload),
-    )
-        .into_response()
+    (api_status, Json(response_payload)).into_response()
 }
 
 fn hash_request_body(body: &str) -> String {
