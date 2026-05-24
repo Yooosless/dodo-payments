@@ -8,7 +8,7 @@ servers:
     description: Local Development Environment
 
 paths:
-  /businesses:
+  /onboard:
     post:
       summary: Register a Merchant Business
       description: Provisions a new tenant profile and generates unique cryptographic secrets.

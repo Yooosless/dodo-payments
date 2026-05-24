@@ -37,7 +37,7 @@ The system exposes the following REST endpoints for merchant administration and 
 
 ### Example 1: Register a Merchant Business
 ```bash
-curl -X POST http://localhost:3000/api/v1/businesses \
+curl -X POST http://localhost:3000/api/v1/onboard \
   -H "Content-Type: application/json" \
   -d '{"name": "gg haded", "webhook_url": "https://api.gg.com"}'
 ```
