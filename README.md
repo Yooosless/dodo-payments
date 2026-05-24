@@ -3,6 +3,15 @@
 A payment and billing engine built with Rust and PostgreSQL that implements strict financial constraints, request deduplication, and safe transaction state tracking.
 
 ---
+## Loom Video Demos
+
+| Parts | Link |
+| :--- | :--- |
+| **Part 1** | [Watch Demo 1](https://www.loom.com/share/b2269264968f455b9b8aaf5bc87cf20a) |
+| **Part 2** | [Watch Demo 2](https://www.loom.com/share/318b1918e92c4e88ba5a448f1d0a0b0d) |
+| **Part 3** | [Watch Demo 3](https://www.loom.com/share/dc12addfa82a42e1a70ff8e92eeac19a) |
+| **Part 4** | [Watch Demo 4](https://www.loom.com/share/b9b03f529b434d5b9f0eed0a7ac65bce) |
+---
 
 ## 1. System Requirements
 
