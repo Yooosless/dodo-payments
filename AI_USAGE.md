@@ -2,10 +2,10 @@
 
 ## 1. Tools Used & Specific Scopes
 
-* **Gemini (This Chat Instance)**: Acted as my primary architectural sparring partner. I didn't just ask it to write code; I used it to format layouts, clean up dense text walls into readable Markdown, build out structural documentation like the OpenAPI `swagger.yaml` spec, and iteratively refine the physical database ER box diagrams.
-* **Cursor / Copilot**: Used for high-speed inline editor autocomplete. It generated the standard boilerplate code, serialized structures, Rust struct tags, and formatted the sequential terminal `curl` execution paths.
+* **Gemini (This Chat Instance)**: Acted as my primary architectural partner. Instead of just letting it blind-write code, I used it to clean up dense walls of text, structure the OpenAPI swagger.yaml specification, and iterate on structural layout definitions.
 * **ChatGPT**: Used as a quick reference tool during early engineering planning to weigh the trade-offs of Postgres advisory locks versus row-level pessimistic locking.
 
+Almost all of the documentation structuring and minor syntax debugging fixes were assisted by AI. And the Data models, flowchart was drawn by AI as well.
 ---
 
 ## 2. Independent Decisions (Where I pushed back or took control)
@@ -15,15 +15,11 @@
 * **My Choice**: I explicitly pushed back and enforced a strict database-level unique composite constraint: `PRIMARY KEY (idempotency_key, business_id)`.
 * **Why**: Doing string manipulation in application code is a recipe for runtime bugs. Forcing the composite key straight into the PostgreSQL schema guarantees absolute multi-tenancy isolation at the data layer, making cross-tenant collisions physically impossible.
 
-### Decision 2: Pessimistic Row Locking vs. Advisory Locks / OCC
-* **AI Suggested**: Use **Postgres Advisory Locks** or **Optimistic Concurrency Control (OCC)** to keep code non-blocking and highly concurrent.
-* **My Choice**: I chose a strict **Pessimistic Row Lock** (`SELECT ... FOR UPDATE`) inside an isolated transaction block.
-* **Why**: Advisory locks detach the lock lifecycle from actual row state, which risks stuck or orphaned locks if a container crashes mid-flight. OCC forces expensive application-level retries under heavy traffic. Pessimistic locking handles concurrency safely at the database layer, ensuring only one thread can ever call out to the bank gateway at a time.
 
-### Decision 3: Completely Asynchronous Out-of-Band Webhooks
-* **AI Suggested**: Wrote standard handler boilerplate that fired the outbound webhook HTTP requests inline, right inside the synchronous API payment execution path.
-* **My Choice**: I stripped it out and decoupled webhook delivery completely from the critical payment response loop using async green threads (`tokio::spawn`).
-* **Why**: Inline webhooks make your API latency completely dependent on the health of your customer's server. Spawning the task out-of-band guarantees that our payment API returns a response to the user in milliseconds, fully shielding our platform from third-party network issues.
+### Decision 4: Implementing a Timeout Guard for "In-Flight" Requests
+* **AI Suggested**: The AI generated an asynchronous execution loop where duplicate requests arriving during a slow gateway transaction were served an indefinite `202 Accepted (PROCESSING)` state payload.
+* **My Choice**: I explicitly updated the architecture to handle timeout failures gracefully, ensuring that if a background worker times out or panics, the invoice rolls back to an `OPEN` state instead of getting stuck in `PROCESSING` forever.
+* **Why**: The AI's design assumed a perfect world where background workers never die. In reality, if a thread panics or the gateway hangs indefinitely, the invoice gets orphaned in a locked `PROCESSING` state limbo, blocking the customer from ever retrying. I added safety boundaries so that failed or timed-out background executions explicitly release the state lock, allowing users to safely re-attempt payment.
 
 ---
 
